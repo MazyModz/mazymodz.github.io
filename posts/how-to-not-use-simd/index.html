@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <link rel="stylesheet" href="style.css">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        <div class="main">
+            <div class="content">
+                <h1>How to NOT use SIMD</h1>
+                <p><a href="https://stackoverflow.com/questions/4120681/how-to-calculate-single-vector-dot-product-using-sse-intrinsic-functions-in-c">I see questions like this</a> – how to SIMDize a Vector Dot Product. I also see this kind of code in productions of massive codebases where performance is critical. Like the VectorDot4 function in <a href="https://github.com/EpicGames/UnrealEngine/blob/5.3.2-release/Engine/Source/Runtime/Core/Public/Math/UnrealMathSSE.h#L1576">Unreal Engine</a>, which calculates a single dot product from two vectors:</p>
+                <img src="592d6df3069c00494bd2e01412be0fc1.png" width="70%">
+                <p>In my opinion this is the wrong way to use SIMD. But what’s so wrong about this? Surely SIMD should give us some performance benefits compared to scalar code?</p>
+                <p>Well let’s test that theory out, here is a simple benchmark running this VectorDot4 on 1024 pairs of random vectors. <i>The vectors are laid out contiguous and memory access is linear in a tight loop. The cache has also been warmed up.</i></p>
+                <img src="95727dca5fcc229c649390258a91c3e0.png" width="40%">
+                <p>Okay sure, we get a little bit of performance gains but this still doesn’t sit right with me. SIMD is supposed to be processing multiple pieces of data for roughly (usually) the same cost as doing a scalar operation. The fact that we are getting such minor wins to me says that we are doing something wrong. What I expect is that we should get a whole 4x speedup, not a 1.15x speedup. This is also way harder to write and understand compared to just a normal dot product.</p>
+                <p>Let’s break down what the VectorDot4 actually does. But first, a quick primer on how SIMD works. SIMD allows us to operate on multiple pieces of data with a single instruction (Single Instruction Multiple Data). On modern hardware, the latency and throughput of packed (SIMD) instructions is roughly the same as that of the equivalent scalar instruction (<a href="https://www.agner.org/optimize/instruction_tables.pdf">but you should always verify that</a>). SIMD Works in a “vertical” manner, let me illustrate:</p>
+                <img src="492e6d2ea4c4e320819cf9e32dc25655.jpg" width="40%">
+                <p>We have two arrays of 4 elements A & B, when we add these with SIMD it adds each element in the same <b>lane</b> to produce a new array C. This is what I mean with SIMD works vertically. In general there are no horizontal instructions, meaning you can’t really operate across different lanes.</p>
+                <p>Now let’s go back to our VectorDot4 example. The input SIMD lanes in Vec1 and Vec2 are laid out like this, your typical vector:</p>
+                <img src="9963db2b4caa6060aed370883215612d.png" width="40%">
+                <p>You'll notice that we have a W component, which we have to add since SIMD requires at least 4 elements. First we multiply Vec1 and Vec2 to calculate the Square for each component in the vector. The next step is to sum all the components together. Here is the ‘Oh Shit’ moment — we need to operate horizontally across lanes to sum each component. We have a bunch of options here;</p>
+                <ol>
+                    <li>
+                        <p>Switch to scalar operations. We multiply as SIMD but then add like we would normally:</p>
+                        <div class="code-block">
+                            R = _mm_mul_ps(Vec1, Vec2); // packed mul<br>
+                            return R[0] + R[1] + R[2]; // 2x scalar adds (ignore W component)
+                        </div>
+                    </li>
+                    <li>
+                        <p>The other approach, which is what VectorDot4 does is to use Shuffles. A shuffle simply reorganizes the lanes. The idea is to shuffle the lanes so that they line up to then add them together vertically.</p>
+                        <img src="62e5f6e275d638777f6850ee7c28ee32.png" width="60%">
+                        <p>Now the X and Y components are aligned to the same lane and we can add them together. Then we need to do another shuffle and add again for the Z component. Finally, we pull out the value in the first lane which is our dot product, and in that process discard the three other values...</p>
+                    </li>
+                </ol>
+                <p>Neither of these two options are ideal, but at least with the second one we don’t have to switch to scalar. But the key point is that those shuffles are not free, it’s an instruction that has to be executed. There is also a dependency chain issue here. Modern CPUs are heavily pipelined to execute instructions in parallel. But in this DotProduct we can't do anything in parallel, since we can't swizzle before we've multiplied, we can't add X and Y before we've swizzled, and we can't add Z until we've added X and Y.</p>
+                <h2>Using SIMD correctly</h2>
+                <p>The whole point of SIMD is to process multiple things at the same time — so let’s just do that instead. <b>We should be processing four individual dot products at once, not just a single one.</b> Let’s update our VectorDot4 function</p>
+                <img src="91d71da5f4ff7aa837abc393ee2ae392.png" width="60%">
+                <p>You’ll notice that we’ve split up Vec1 and Vec2 into its separate components. This is important as we see here</p>
+                <img src="7b06d28f72144f3b957fb9118ad251a6.png" width="60%">
+                <p>Look at how clean that is, no need to shuffle. It follows the DotProduct formula exactly with 3x Muls and 2x Adds. This is also significantly easier to understand and debug. But what about performance?</p>
+                <img src="4f07d2acc058a8a7500587a1614e7cb4.png" width="40%">
+                <p>A near perfect 4x speed up. This is what we should expect from SIMD. On my Zen2 CPU the latency & throughput of packed and scalar float multiplication/ additions are exactly the same. Meaning that we should be able to process 4x the data at exactly the same speeds. And we see that here.</p>
+                <p>One thing that I haven’t mentioned up until this point is that a 4 wide SIMD is the <b>minimum</b> on x64 CPUs. Nearly all modern processors ship with the AVX instruction set which allows us to operate on <b>8-wide</b> (256-bit) lanes. In the original VectorDot4 it would be impossible or very wasteful to scale up to 8 wide since a vector only contains 3 components. But when processing individual dot products we can very easily scale up:</p>
+                <img src="0cc5f354a437ea542dbf8610504ee764.png" width="40%">
+                <h2>Wrapping Up</h2>
+                <p>Unfortunately I think a lot of the issue as to why SIMD is being misused is due to poor data layout. As we saw, in order to calculate four individual dot products we need to separate out each component in the vector. This is unintuitive to most programmers and most systems are not designed to be flexible enough to support both types of data layouts. This is why it’s important to always keep performance and SIMD in mind early when designing a system. You don’t have to optimize your code now, but make sure that the code is <b>optimizable</b>.</p>
+                <p>It is also okay to keep multiple copies of the same data but stored in different formats. Then select one depending on what makes sense for the routine which you are about to run. RAM is cheap nowadays but it’s the bandwidth that’s at premium. Another approach would be to swizzle your data layout before sending it to the SIMD routine and then swizzle it back to the original format once done. But don’t be brainless when doing this; make sure that wins gained from the SIMD routine outweighs the overhead of memory moves when swizzling. There are many different approaches to this so it’s important that the layout is flexible.</p>
+                <p>Another thing to mention is to be very careful of branches, and usually, avoid them completely. The cost of mispredicting a branch on modern hardware is in the order of 10-20 cycles (depends on your microarchitecture). You should avoid branches where the condition changes per iteration at all costs. Calculating both values and then selecting based on the condition is a typical way of avoiding branches with SIMD. There are many ways of doing this, here is one example</p>
+                <div class="code-block">
+                    u32 laneMask = 0x5; // 0101 - select A or B depending on set bit for the lane<br>
+                    __m128 a = _mm_blend_ps(someConst1, someConst2, laneMask);
+                </div>
+                <br>
+                <p>But anyways, I have gone on for long enough now so hopefully you learned something or gained a different perspective on SIMD</p>
+                <p>~ Dennis</p>
+                <br>
+                <h3>Resources</h3>
+                <a href="https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html">Intel Intrinsics Guide</a><br>
+                <a href="https://www.agner.org/optimize/instruction_tables.pdf">Agner Fog Instruction Table</a>
+            </div>
+        </div>
+    </body>
+</html>

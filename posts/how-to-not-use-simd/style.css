@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&display=swap');
+
+body {
+    margin: 0;
+    padding: 0;
+    line-height: 1.25;
+}
+
+.main {
+    width:40%; 
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: auto; 
+    margin-right: auto; 
+    color: #172b4d;
+    font-family: Calibri, sans-serif; 
+    font-size: 120%;
+    background-color: #ffffff;
+}
+
+.content {
+    margin-left: 5%;
+    margin-right: 5%;
+    padding-bottom: 50px;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+h1 {
+    margin-top: 0;
+    padding-top: 40px;
+}
+
+h2 {
+    margin-top: 40px;
+    margin-bottom: 20px;
+}
+
+[href] {
+    color: #0c66e4;
+    text-decoration: none;
+}
+
+[href]:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+}
+
+[href]:active {
+    color: #05c;
+}
+
+.code-block {
+    font-family: "Source Code Pro", monospace;
+    font-size: 80%;
+    font-weight: 600;
+    background-color: #eef1f7;
+    padding: 16px;
+    border-color: #cccccc;
+    border-style: solid;
+    border-width: 1px;
+    color: #008000;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+@media only screen and (max-width: 1920px) {
+    .main {
+        width:45%; 
+    }
+}
+
+
+@media only screen and (max-width: 1400px) {
+    .main {
+        width:60%; 
+    }
+}
+
+@media only screen and (max-width: 1000px) {
+    .main {
+        width:75%; 
+    }
+
+    .code-block {
+        padding: 8px;
+    }
+}
+
+@media only screen and (max-width: 800px) {
+    .main {
+        width:95%; 
+    }
+
+    .code-block {
+        padding: 4px;
+    }
+}
+
+@media only screen and (max-width: 600px) {
+    .main {
+        width:95%; 
+    }
+
+    .code-block {
+        padding: 8px;
+    }
+}
