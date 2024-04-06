@@ -11,5 +11,5 @@ hardware they are programming works. Hopefully this blog will, however tiny, mak
 
 ## Posts
  * [It's all about Memory (WIP)](posts/its-all-about-memory.md)
- * [How to NOT use SIMD](posts/how-to-not-use-simd.md)
+ * [How to NOT use SIMD](posts/how-to-not-use-simd/index.html)
  
